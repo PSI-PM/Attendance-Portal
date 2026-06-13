@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>PSI PM Attendance Portal</title>
+<meta name="theme-color" content="#1a8ab5">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Source+Sans+3:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
+<style>
+:root {
+  --blue:#00a8ff; --blue-dark:#0078dd; --blue-light:rgba(0,140,255,0.12); --blue-mid:rgba(0,140,255,0.3);
+  --green:#00c8a8; --green-dark:#00a08a; --green-light:rgba(0,180,160,0.12);
+  --yellow:#e0a030; --yellow-light:rgba(220,150,30,0.12);
+  --red:#ff6060; --red-dark:#cc3030; --red-light:rgba(255,80,80,0.12);
+  --bg:#050f22; --surface:#071020; --surface-2:rgba(255,255,255,0.04);
+  --card-bg:rgba(0,60,180,0.08); --card-border:rgba(0,140,255,0.25);
+  --gray-50:rgba(255,255,255,0.03); --gray-100:rgba(255,255,255,0.05);
+  --gray-200:rgba(0,140,255,0.2); --gray-400:#7ab0d0; --gray-500:#5a8aaa;
+  --gray-700:#90c8f0; --gray-900:#e0f0ff;
+  --shadow:0 0 24px rgba(0,100,255,0.18);
+  --radius:10px; --radius-lg:16px;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:"Source Sans 3",sans-serif;background:var(--bg);color:var(--gray-900);min-height:100vh;-webkit-text-size-adjust:100%;}
+h1,h2,h3{font-family:"Playfair Display",serif;color:var(--gray-900);}
+button{cursor:pointer;font-family:inherit;}
+input,textarea,select{font-family:inherit;}
+
+.screen{display:none;min-height:100vh;flex-direction:column;}
+.screen.active{display:flex;}
+
+/* LOGIN */
+#screen-login{
+  background:
+    radial-gradient(ellipse 80% 60% at 50% 40%,rgba(0,90,255,0.4) 0%,rgba(0,50,180,0.15) 45%,transparent 70%),
+    radial-gradient(ellipse 50% 40% at 20% 80%,rgba(0,40,140,0.25) 0%,transparent 60%),
+    linear-gradient(180deg,#040d1c 0%,#050f22 50%,#04091a 100%);
+  align-items:center;justify-content:center;padding:20px;
+}
+.login-box{
+  background:rgba(0,60,180,0.07);border:0.5px solid rgba(0,140,255,0.22);
+  border-radius:var(--radius-lg);padding:44px;width:100%;max-width:420px;
+  box-shadow:0 24px 64px rgba(0,0,0,0.4);
+}
+.login-brand{text-align:center;margin-bottom:28px;}
+.login-logo{
+  display:inline-block;background:rgba(0,140,255,0.15);border:0.5px solid rgba(0,160,255,0.4);
+  color:white;font-family:"Playfair Display",serif;font-size:18px;font-weight:700;
+  padding:10px 18px;border-radius:8px;margin-bottom:8px;
+  box-shadow:0 0 20px rgba(0,140,255,0.3);
+}
+.login-logo span{color:#00e8ff;text-shadow:0 0 14px rgba(0,230,255,0.8);}
+.login-tagline{font-size:12px;color:var(--gray-500);margin-top:4px;}
+.login-title{font-size:22px;color:var(--gray-900);margin-bottom:4px;}
+.login-sub{font-size:13px;color:var(--gray-500);margin-bottom:22px;}
+.btn-primary{
+  width:100%;padding:13px;border-radius:8px;border:none;background:var(--blue);
+  color:white;font-size:15px;font-weight:600;transition:background 0.15s;
+  box-shadow:0 4px 12px rgba(26,138,181,0.3);
+}
+.btn-primary:hover{background:var(--blue-dark);}
+.btn-primary:disabled{opacity:0.6;cursor:not-allowed;}
+.btn-ms{
+  width:100%;padding:13px;border-radius:8px;
+  border:0.5px solid rgba(0,140,255,0.3);background:rgba(0,60,180,0.1);
+  color:var(--gray-900);font-size:14px;font-weight:600;transition:all 0.15s;
+  display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:12px;
+}
+.btn-ms:hover{background:rgba(0,80,200,0.2);border-color:rgba(0,180,255,0.5);}
+.ms-icon{width:20px;height:20px;}
+.divider{display:flex;align-items:center;gap:10px;margin:16px 0;color:var(--gray-500);font-size:12px;}
+.divider::before,.divider::after{content:'';flex:1;height:0.5px;background:var(--gray-200);}
+.alert{padding:10px 14px;border-radius:6px;font-size:13px;margin-bottom:12px;display:none;}
+.alert.visible{display:block;}
+.alert-error{background:var(--red-light);border:1px solid rgba(255,96,96,0.3);color:#ff9090;}
+.form-label{display:block;font-size:11px;font-weight:600;color:var(--gray-500);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:5px;}
+.form-input{
+  width:100%;padding:11px 14px;border-radius:8px;border:1.5px solid var(--gray-200);
+  background:var(--gray-50);font-size:14px;color:var(--gray-900);outline:none;
+  transition:border-color 0.15s;margin-bottom:14px;
+}
+.form-input:focus{border-color:rgba(0,160,255,0.5);background:rgba(0,100,255,0.15);}
+.login-footer{margin-top:28px;padding-top:20px;border-top:1px solid var(--gray-100);text-align:center;font-size:11px;color:var(--gray-500);}
+
+/* HEADER */
+.app-header{
+  background:rgba(5,13,26,0.92);border-bottom:0.5px solid rgba(0,140,255,0.2);
+  padding:0 20px;box-shadow:0 0 20px rgba(0,80,255,0.15);
+  position:sticky;top:0;z-index:100;backdrop-filter:blur(12px);
+  display:flex;align-items:center;justify-content:space-between;height:56px;
+}
+.header-logo{
+  background:rgba(0,140,255,0.15);border:0.5px solid rgba(0,160,255,0.4);
+  color:white;box-shadow:0 0 12px rgba(0,140,255,0.25);
+  font-family:"Playfair Display",serif;font-size:15px;font-weight:700;
+  padding:5px 12px;border-radius:6px;
+}
+.header-logo span{color:#00e8ff;text-shadow:0 0 14px rgba(0,230,255,0.8);}
+.header-right{display:flex;align-items:center;gap:14px;}
+.header-user{font-size:12px;color:var(--gray-500);}
+.header-user strong{color:var(--gray-700);}
+.logout-btn{font-size:12px;color:var(--gray-400);background:none;border:0.5px solid rgba(0,140,255,0.2);padding:5px 12px;border-radius:6px;transition:all 0.15s;}
+.logout-btn:hover{color:var(--red);border-color:rgba(255,96,96,0.3);}
+
+/* APP */
+#screen-app{
+  background:
+    radial-gradient(ellipse 70% 55% at 50% 20%,rgba(0,90,255,0.32) 0%,rgba(0,60,180,0.12) 45%,transparent 70%),
+    linear-gradient(180deg,#040d1c 0%,#050f22 40%,#04091a 100%);
+  background-attachment:fixed;
+}
+.app-main{max-width:1100px;margin:0 auto;padding:28px 24px;flex:1;}
+
+/* COURSES */
+.page-eyebrow{font-size:10.5px;color:var(--gray-500);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:8px;font-weight:500;}
+.page-title{font-size:28px;margin-bottom:4px;}
+.page-sub{font-size:13px;color:var(--gray-500);margin-bottom:24px;}
+.date-badge{display:inline-block;padding:5px 14px;border-radius:20px;background:rgba(0,140,255,0.1);border:0.5px solid rgba(0,140,255,0.3);font-size:12px;color:var(--blue);font-weight:600;margin-bottom:24px;}
+.courses-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;}
+.course-card{
+  background:var(--card-bg);border:0.5px solid var(--card-border);
+  border-radius:var(--radius);padding:20px 22px;cursor:pointer;
+  transition:all 0.2s;box-shadow:0 0 16px rgba(0,80,255,0.08);
+  display:flex;align-items:center;justify-content:space-between;
+}
+.course-card:hover{border-color:rgba(0,180,255,0.5);background:rgba(0,80,200,0.12);box-shadow:0 0 28px rgba(0,140,255,0.2);transform:translateY(-1px);}
+.course-code{font-size:10.5px;color:var(--blue);letter-spacing:0.1em;text-transform:uppercase;font-weight:600;margin-bottom:5px;}
+.course-name{font-size:16px;font-family:"Playfair Display",serif;color:var(--gray-900);margin-bottom:3px;}
+.course-meta{font-size:12px;color:var(--gray-500);}
+.course-status{padding:4px 10px;border-radius:20px;font-size:11px;font-weight:600;}
+.status-upcoming{background:var(--yellow-light);color:var(--yellow);}
+.status-inprogress{background:var(--blue-light);color:var(--blue);}
+.course-arrow{color:var(--gray-500);font-size:18px;margin-left:12px;}
+.empty-state{background:var(--card-bg);border:0.5px solid var(--card-border);border-radius:var(--radius-lg);padding:48px;text-align:center;}
+.empty-icon{font-size:36px;margin-bottom:12px;opacity:0.5;}
+.empty-title{font-size:16px;color:var(--gray-700);margin-bottom:6px;}
+.empty-sub{font-size:13px;color:var(--gray-500);}
+
+/* ATTENDANCE */
+.back-btn{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--gray-500);background:none;border:none;padding:0;margin-bottom:20px;transition:color 0.15s;}
+.back-btn:hover{color:var(--blue);}
+.attendance-header{background:var(--card-bg);border:0.5px solid var(--card-border);border-radius:var(--radius);padding:18px 22px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;}
+.attendance-course-code{font-size:10.5px;color:var(--blue);letter-spacing:0.1em;text-transform:uppercase;font-weight:600;margin-bottom:3px;}
+.attendance-course-name{font-size:18px;font-family:"Playfair Display",serif;color:var(--gray-900);}
+.attendance-meta{font-size:12px;color:var(--gray-500);margin-top:2px;}
+.attendance-date-label{font-size:10.5px;color:var(--gray-500);letter-spacing:0.08em;text-transform:uppercase;font-weight:500;}
+.attendance-date-value{font-size:20px;font-family:"Playfair Display",serif;color:var(--gray-900);}
+
+.table-wrap{overflow-x:auto;border-radius:var(--radius);border:0.5px solid var(--card-border);}
+.attendance-table{width:100%;border-collapse:collapse;background:var(--card-bg);}
+.attendance-table th{padding:12px 16px;text-align:center;font-size:11px;font-weight:600;color:var(--gray-500);letter-spacing:0.08em;text-transform:uppercase;border-bottom:0.5px solid var(--card-border);background:rgba(0,40,120,0.15);white-space:nowrap;}
+.attendance-table th.col-name{text-align:left;min-width:180px;}
+.attendance-table td{padding:14px 16px;border-bottom:0.5px solid rgba(0,140,255,0.08);text-align:center;vertical-align:middle;}
+.attendance-table td.col-name{text-align:left;}
+.attendance-table tr:last-child td{border-bottom:none;}
+.attendance-table tr:hover td{background:rgba(0,80,200,0.06);}
+.student-name{font-size:14px;color:var(--gray-900);font-weight:500;}
+.student-num{font-size:11px;color:var(--gray-500);margin-top:1px;}
+
+.cb-wrap{display:flex;align-items:center;justify-content:center;}
+.cb-custom{width:24px;height:24px;border-radius:6px;border:1.5px solid rgba(0,140,255,0.3);background:rgba(0,40,120,0.1);cursor:pointer;position:relative;transition:all 0.15s;flex-shrink:0;}
+.cb-custom:hover{border-color:rgba(0,180,255,0.6);background:rgba(0,100,255,0.15);}
+.cb-custom.checked-present{background:rgba(0,200,168,0.2);border-color:var(--green);box-shadow:0 0 8px rgba(0,200,168,0.3);}
+.cb-custom.checked-present::after{content:"✓";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:var(--green);font-size:14px;font-weight:700;}
+.cb-custom.checked-absent{background:rgba(255,96,96,0.15);border-color:var(--red);box-shadow:0 0 8px rgba(255,96,96,0.2);}
+.cb-custom.checked-absent::after{content:"✗";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:var(--red);font-size:14px;font-weight:700;}
+.cb-custom.checked-late{background:var(--yellow-light);border-color:var(--yellow);box-shadow:0 0 8px rgba(224,160,48,0.2);}
+.cb-custom.checked-late::after{content:"L";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:var(--yellow);font-size:12px;font-weight:700;}
+.cb-custom.checked-leftearly{background:rgba(0,140,255,0.15);border-color:var(--blue);box-shadow:0 0 8px rgba(0,140,255,0.2);}
+.cb-custom.checked-leftearly::after{content:"LE";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:var(--blue);font-size:10px;font-weight:700;}
+.cb-custom.checked-excused{background:rgba(150,80,255,0.15);border-color:#a060ff;box-shadow:0 0 8px rgba(150,80,255,0.2);}
+.cb-custom.checked-excused::after{content:"E";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#a060ff;font-size:12px;font-weight:700;}
+
+.notes-section{margin-top:20px;}
+.notes-label{font-size:11px;font-weight:600;color:var(--gray-500);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:8px;}
+.notes-input{width:100%;padding:12px 14px;border-radius:8px;border:1.5px solid var(--gray-200);background:var(--card-bg);font-size:14px;color:var(--gray-900);outline:none;transition:border-color 0.15s;resize:vertical;min-height:80px;}
+.notes-input:focus{border-color:rgba(0,160,255,0.5);background:rgba(0,60,180,0.1);}
+.notes-input::placeholder{color:var(--gray-500);}
+
+.action-row{display:flex;gap:12px;margin-top:24px;justify-content:flex-end;flex-wrap:wrap;}
+.btn-cancel{padding:11px 24px;border-radius:8px;border:0.5px solid rgba(0,140,255,0.25);background:rgba(0,50,150,0.08);color:var(--gray-500);font-size:14px;font-weight:600;transition:all 0.15s;}
+.btn-cancel:hover{border-color:rgba(255,96,96,0.3);color:var(--red);}
+.btn-submit{padding:11px 28px;border-radius:8px;border:none;background:linear-gradient(90deg,#0050d0,#0090e8,#00b4ff);color:white;font-size:14px;font-weight:600;box-shadow:0 0 20px rgba(0,140,255,0.35);transition:opacity 0.15s;}
+.btn-submit:hover{opacity:0.9;}
+.btn-submit:disabled{opacity:0.5;cursor:not-allowed;}
+
+/* SUCCESS */
+#screen-success{
+  background:radial-gradient(ellipse 70% 55% at 50% 20%,rgba(0,200,168,0.25) 0%,transparent 70%),linear-gradient(180deg,#040d1c 0%,#050f22 100%);
+  align-items:center;justify-content:center;padding:20px;
+}
+.success-box{background:var(--card-bg);border:0.5px solid rgba(0,200,168,0.3);border-radius:var(--radius-lg);padding:48px;max-width:440px;width:100%;text-align:center;box-shadow:0 0 40px rgba(0,200,168,0.15);}
+.success-icon{font-size:48px;margin-bottom:16px;}
+.success-title{font-size:24px;margin-bottom:8px;color:var(--green);}
+.success-sub{font-size:14px;color:var(--gray-500);margin-bottom:28px;line-height:1.6;}
+.btn-back-courses{padding:12px 28px;border-radius:8px;border:none;background:var(--green);color:white;font-size:14px;font-weight:600;box-shadow:0 0 20px rgba(0,200,168,0.3);transition:opacity 0.15s;}
+.btn-back-courses:hover{opacity:0.85;}
+
+/* LOADING / TOAST */
+.loading-overlay{position:fixed;inset:0;background:rgba(5,13,26,0.85);display:none;align-items:center;justify-content:center;z-index:500;backdrop-filter:blur(4px);}
+.loading-overlay.visible{display:flex;}
+.spinner{width:40px;height:40px;border:3px solid rgba(0,140,255,0.2);border-top-color:var(--blue);border-radius:50%;animation:spin 0.8s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.toast{position:fixed;bottom:24px;right:24px;background:rgba(0,60,180,0.95);border:0.5px solid rgba(0,140,255,0.4);border-radius:10px;padding:12px 18px;font-size:13px;color:var(--gray-900);box-shadow:0 8px 32px rgba(0,0,0,0.4);z-index:600;transform:translateY(80px);opacity:0;transition:all 0.3s;max-width:320px;}
+.toast.visible{transform:translateY(0);opacity:1;}
+.toast.toast-error{border-color:rgba(255,96,96,0.4);background:rgba(80,20,20,0.95);}
+.toast.toast-success{border-color:rgba(0,200,168,0.4);background:rgba(0,60,40,0.95);}
+
+@media(max-width:640px){
+  .app-main{padding:16px;}
+  .login-box{padding:28px 20px;}
+  .attendance-header{flex-direction:column;}
+  .action-row{flex-direction:column;}
+  .btn-cancel,.btn-submit{width:100%;text-align:center;}
+  .courses-grid{grid-template-columns:1fr;}
+}
+</style>
+</head>
+<body>
+
+<div class="loading-overlay" id="loading"><div class="spinner"></div></div>
+<div class="toast" id="toast"></div>
+
+<!-- LOGIN -->
+<div class="screen active" id="screen-login">
+  <div class="login-box">
+    <div class="login-brand">
+      <div class="login-logo">PSI <span>PM</span></div>
+      <div class="login-tagline">PSI Project Management Inc. — Attendance Portal</div>
+    </div>
+    <div class="login-title">Instructor Sign In</div>
+    <div class="login-sub">Sign in with your PSI Microsoft account</div>
+    <div class="alert alert-error" id="login-error"></div>
+    <button class="btn-ms" onclick="handleMSLogin()">
+      <svg class="ms-icon" viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg">
+        <rect x="1" y="1" width="9" height="9" fill="#f25022"/>
+        <rect x="11" y="1" width="9" height="9" fill="#7fba00"/>
+        <rect x="1" y="11" width="9" height="9" fill="#00a4ef"/>
+        <rect x="11" y="11" width="9" height="9" fill="#ffb900"/>
+      </svg>
+      Sign in with Microsoft
+    </button>
+    <div class="login-footer">PSI Project Management Inc. · Attendance Portal v1.0</div>
+  </div>
+</div>
+
+<!-- APP -->
+<div class="screen" id="screen-app">
+  <header class="app-header">
+    <div class="header-logo">PSI <span>PM</span></div>
+    <div class="header-right">
+      <div class="header-user">Signed in as <strong id="header-name"></strong></div>
+      <button class="logout-btn" onclick="handleLogout()">Sign Out</button>
+    </div>
+  </header>
+  <main class="app-main">
+    <!-- COURSES VIEW -->
+    <div id="view-courses">
+      <div class="page-eyebrow">Attendance Portal</div>
+      <h1 class="page-title">Your Courses</h1>
+      <p class="page-sub">Select a course to mark today's attendance.</p>
+      <div class="date-badge" id="today-badge"></div>
+      <div class="courses-grid" id="courses-grid">
+        <div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">Loading courses…</div></div>
+      </div>
+    </div>
+    <!-- ATTENDANCE VIEW -->
+    <div id="view-attendance" style="display:none;">
+      <button class="back-btn" onclick="showCourses()">← Back to courses</button>
+      <div class="attendance-header">
+        <div>
+          <div class="attendance-course-code" id="att-code"></div>
+          <div class="attendance-course-name" id="att-name"></div>
+          <div class="attendance-meta" id="att-meta"></div>
+        </div>
+        <div>
+          <div class="attendance-date-label">Class Date</div>
+          <div class="attendance-date-value" id="att-date"></div>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="attendance-table">
+          <thead>
+            <tr>
+              <th class="col-name"># &nbsp;Student</th>
+              <th>Present</th>
+              <th>Absent</th>
+              <th>Late</th>
+              <th>Left Early</th>
+              <th>Excused</th>
+            </tr>
+          </thead>
+          <tbody id="student-rows"></tbody>
+        </table>
+      </div>
+      <div class="notes-section">
+        <div class="notes-label">Notes (optional)</div>
+        <textarea class="notes-input" id="att-notes" placeholder="Add any notes about today's session…"></textarea>
+      </div>
+      <div class="action-row">
+        <button class="btn-cancel" onclick="showCourses()">Cancel</button>
+        <button class="btn-submit" id="submit-btn" onclick="submitAttendance()">Save Attendance</button>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- SUCCESS -->
+<div class="screen" id="screen-success">
+  <div class="success-box">
+    <div class="success-icon">✅</div>
+    <h2 class="success-title">Attendance Saved</h2>
+    <p class="success-sub" id="success-msg"></p>
+    <button class="btn-back-courses" onclick="showCourses()">Back to Courses</button>
+  </div>
+</div>
+
+<script>
+// ── CONFIG ──────────────────────────────────────
+const CONFIG = {
+  clientId:   'ab30f561-3b18-458d-bc42-c2037ddedcb9',
+  tenantId:   '9e7b19f7-23f2-4301-8ee2-937876784648',
+  siteHostname: 'psiprojectmanagement.sharepoint.com',
+  sitePath:   '/sites/PSIProjectManagement',
+  siteId:     '35ccb356-7bb5-483b-a0ef-707ff1c43154',
+  coursesListId:    '1d435e7e-f510-4a96-b20f-2ba9b1b3babe',
+  studentsListId:   '51348acc-f711-48d7-9803-45bb1518b118',
+  attendanceListId: 'd464aa77-7218-49b3-8131-aede92fd8d29',
+};
+
+const SCOPES = ['Sites.ReadWrite.All','User.Read'];
+
+// ── MSAL ────────────────────────────────────────
+const msalApp = new msal.PublicClientApplication({
+  auth: {
+    clientId: CONFIG.clientId,
+    authority: `https://login.microsoftonline.com/${CONFIG.tenantId}`,
+    redirectUri: window.location.origin + window.location.pathname,
+  },
+  cache: { cacheLocation: 'sessionStorage' },
+});
+
+// ── STATE ───────────────────────────────────────
+let state = {
+  user: null,
+  accessToken: null,
+  courses: [],
+  selectedCourse: null,
+  students: [],
+  attendance: {},
+};
+
+// ── UTILS ───────────────────────────────────────
+function showScreen(id){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+function showLoading(v){document.getElementById('loading').classList.toggle('visible',v);}
+function showToast(msg,type=''){
+  const t=document.getElementById('toast');
+  t.textContent=msg;
+  t.className='toast visible'+(type?' toast-'+type:'');
+  setTimeout(()=>t.classList.remove('visible'),3500);
+}
+function formatDate(d){return d.toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});}
+function formatDateShort(d){return d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}
+function todayISO(){return new Date().toISOString().split('T')[0];}
+
+// ── AUTH ────────────────────────────────────────
+async function handleMSLogin(){
+  try {
+    showLoading(true);
+    const result = await msalApp.loginPopup({ scopes: SCOPES });
+    state.user = result.account;
+    state.accessToken = result.accessToken;
+    msalApp.setActiveAccount(result.account);
+    enterApp();
+  } catch(e) {
+    showLoading(false);
+    const errEl = document.getElementById('login-error');
+    errEl.textContent = 'Sign in failed: ' + (e.message || 'Please try again.');
+    errEl.classList.add('visible');
+  }
+}
+
+async function getToken(){
+  try {
+    const result = await msalApp.acquireTokenSilent({ scopes: SCOPES, account: state.user });
+    return result.accessToken;
+  } catch {
+    const result = await msalApp.acquireTokenPopup({ scopes: SCOPES });
+    return result.accessToken;
+  }
+}
+
+function handleLogout(){
+  msalApp.logoutPopup();
+  state = { user:null, accessToken:null, courses:[], selectedCourse:null, students:[], attendance:{} };
+  showScreen('screen-login');
+}
+
+function enterApp(){
+  showLoading(false);
+  const name = state.user.name || state.user.username;
+  document.getElementById('header-name').textContent = name;
+  document.getElementById('today-badge').textContent = '📅 ' + formatDate(new Date());
+  showScreen('screen-app');
+  loadCourses();
+}
+
+// ── GRAPH ────────────────────────────────────────
+async function graphGet(path){
+  const token = await getToken();
+  const res = await fetch(`https://graph.microsoft.com/v1.0${path}`,{
+    headers:{ Authorization:`Bearer ${token}` }
+  });
+  if(!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+async function graphPost(path, body){
+  const token = await getToken();
+  const res = await fetch(`https://graph.microsoft.com/v1.0${path}`,{
+    method:'POST',
+    headers:{ Authorization:`Bearer ${token}`, 'Content-Type':'application/json' },
+    body: JSON.stringify(body),
+  });
+  if(!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+// ── COURSES ──────────────────────────────────────
+async function loadCourses(){
+  showLoading(true);
+  try {
+    const instructorName = state.user.name || state.user.username;
+    const data = await graphGet(
+      `/sites/${CONFIG.siteHostname},${CONFIG.siteId}/lists/${CONFIG.coursesListId}/items?expand=fields&$filter=fields/Instructor eq '${encodeURIComponent(instructorName)}'`
+    );
+    state.courses = data.value || [];
+    renderCourses(state.courses);
+  } catch(e) {
+    // If filter fails, load all courses as fallback
+    try {
+      const data = await graphGet(
+        `/sites/${CONFIG.siteHostname},${CONFIG.siteId}/lists/${CONFIG.coursesListId}/items?expand=fields`
+      );
+      state.courses = data.value || [];
+      renderCourses(state.courses);
+    } catch(e2){
+      showToast('Failed to load courses: ' + e2.message, 'error');
+    }
+  }
+  showLoading(false);
+}
+
+function renderCourses(courses){
+  const grid = document.getElementById('courses-grid');
+  const active = courses.filter(c => {
+    const s = c.fields.Status;
+    const v = typeof s === 'object' ? s.Value : s;
+    return v === 'Upcoming' || v === 'In Progress';
+  });
+  if(!active.length){
+    grid.innerHTML=`<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">No active courses</div><div class="empty-sub">You have no upcoming or in-progress courses assigned to you.</div></div>`;
+    return;
+  }
+  grid.innerHTML = active.map(c => {
+    const f = c.fields;
+    const status = typeof f.Status === 'object' ? f.Status.Value : (f.Status || '');
+    const partner = typeof f.Partner === 'object' ? f.Partner.Value : (f.Partner || '');
+    const courseType = typeof f.CourseType === 'object' ? f.CourseType.Value : (f.CourseType || '');
+    const statusClass = status === 'In Progress' ? 'status-inprogress' : 'status-upcoming';
+    const start = f.StartDate ? formatDateShort(new Date(f.StartDate)) : '';
+    const end = f.EndDate ? formatDateShort(new Date(f.EndDate)) : '';
+    return `
+    <div class="course-card" onclick="selectCourse('${c.id}')">
+      <div>
+        <div class="course-code">${f.Title || ''}</div>
+        <div class="course-name">${courseType}${partner ? ' — ' + partner : ''}</div>
+        <div class="course-meta">${start}${end ? ' → ' + end : ''}</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span class="course-status ${statusClass}">${status}</span>
+        <span class="course-arrow">›</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── STUDENTS ─────────────────────────────────────
+async function selectCourse(courseId){
+  const course = state.courses.find(c => c.id === courseId);
+  if(!course) return;
+  state.selectedCourse = course;
+  state.attendance = {};
+  showLoading(true);
+  try {
+    const data = await graphGet(
+      `/sites/${CONFIG.siteHostname},${CONFIG.siteId}/lists/${CONFIG.studentsListId}/items?expand=fields`
+    );
+    // Filter by course on client side (avoids delegation issues)
+    const courseTitle = course.fields.Title;
+    state.students = (data.value || []).filter(s => {
+      const c = s.fields.Course;
+      if(!c) return false;
+      return c === courseTitle || (typeof c === 'object' && (c.Value === courseTitle || String(c.Id) === String(course.fields.id)));
+    });
+    // Default everyone to Present
+    state.students.forEach(s => {
+      state.attendance[s.id] = { present:true, absent:false, late:false, leftEarly:false, excused:false };
+    });
+    renderAttendance(course, state.students);
+    document.getElementById('view-courses').style.display = 'none';
+    document.getElementById('view-attendance').style.display = 'block';
+  } catch(e){
+    showToast('Failed to load students: ' + e.message, 'error');
+  }
+  showLoading(false);
+}
+
+// ── RENDER ATTENDANCE ────────────────────────────
+function renderAttendance(course, students){
+  const f = course.fields;
+  const partner = typeof f.Partner === 'object' ? f.Partner.Value : (f.Partner || '');
+  const courseType = typeof f.CourseType === 'object' ? f.CourseType.Value : (f.CourseType || '');
+  const instructor = typeof f.Instructor === 'object' ? f.Instructor.Value : (f.Instructor || '');
+  document.getElementById('att-code').textContent = f.Title || '';
+  document.getElementById('att-name').textContent = `${courseType}${partner ? ' — ' + partner : ''}`;
+  document.getElementById('att-meta').textContent = `Instructor: ${instructor}`;
+  document.getElementById('att-date').textContent = formatDate(new Date());
+  document.getElementById('att-notes').value = '';
+  const tbody = document.getElementById('student-rows');
+  if(!students.length){
+    tbody.innerHTML=`<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--gray-500);">No students enrolled yet.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = students.map((s,i) => {
+    const name = s.fields.Title || s.fields['Full Name'] || '';
+    return `
+    <tr>
+      <td class="col-name">
+        <div class="student-name">${name}</div>
+        <div class="student-num">${i+1}</div>
+      </td>
+      <td><div class="cb-wrap"><div class="cb-custom checked-present" id="cb-${s.id}-present" onclick="toggleCb('${s.id}','present')"></div></div></td>
+      <td><div class="cb-wrap"><div class="cb-custom" id="cb-${s.id}-absent" onclick="toggleCb('${s.id}','absent')"></div></div></td>
+      <td><div class="cb-wrap"><div class="cb-custom" id="cb-${s.id}-late" onclick="toggleCb('${s.id}','late')"></div></div></td>
+      <td><div class="cb-wrap"><div class="cb-custom" id="cb-${s.id}-leftearly" onclick="toggleCb('${s.id}','leftEarly')"></div></div></td>
+      <td><div class="cb-wrap"><div class="cb-custom" id="cb-${s.id}-excused" onclick="toggleCb('${s.id}','excused')"></div></div></td>
+    </tr>`;
+  }).join('');
+}
+
+// ── CHECKBOXES ───────────────────────────────────
+function toggleCb(studentId, field){
+  const a = state.attendance[studentId];
+  if(!a) return;
+  if(field === 'present'){
+    a.present = !a.present;
+    if(a.present) a.absent = false;
+  } else if(field === 'absent'){
+    a.absent = !a.absent;
+    if(a.absent) a.present = false;
+  } else {
+    a[field] = !a[field];
+  }
+  const map = [
+    ['present','present'],['absent','absent'],['late','late'],
+    ['leftEarly','leftearly'],['excused','excused']
+  ];
+  map.forEach(([fld,css]) => {
+    const el = document.getElementById(`cb-${studentId}-${css}`);
+    if(!el) return;
+    el.className = 'cb-custom' + (a[fld] ? ` checked-${css}` : '');
+  });
+}
+
+// ── SUBMIT ───────────────────────────────────────
+async function submitAttendance(){
+  const btn = document.getElementById('submit-btn');
+  const notes = document.getElementById('att-notes').value.trim();
+  const today = todayISO();
+  const courseName = state.selectedCourse.fields.Title;
+  const courseId = state.selectedCourse.id;
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+  showLoading(true);
+  try {
+    for(const student of state.students){
+      const a = state.attendance[student.id];
+      const statusVal = a.present ? 'Present' : 'Absent';
+      const extras = [];
+      if(a.late) extras.push('Late');
+      if(a.leftEarly) extras.push('Left Early');
+      if(a.excused) extras.push('Excused');
+      const notesFull = [notes, ...extras].filter(Boolean).join(' | ');
+      await graphPost(
+        `/sites/${CONFIG.siteHostname},${CONFIG.siteId}/lists/${CONFIG.attendanceListId}/items`,
+        { fields: {
+          Title: student.fields.Title || '',
+          CourseId: courseId,
+          ClassDate: today,
+          Status: statusVal,
+          Notes: notesFull,
+        }}
+      );
+    }
+    showLoading(false);
+    document.getElementById('success-msg').textContent =
+      `Attendance for ${state.students.length} student${state.students.length!==1?'s':''} recorded for ${courseName} on ${formatDateShort(new Date())}.`;
+    document.getElementById('view-attendance').style.display = 'none';
+    document.getElementById('view-courses').style.display = 'block';
+    showScreen('screen-success');
+  } catch(e){
+    showLoading(false);
+    showToast('Failed to save: ' + e.message, 'error');
+  }
+  btn.disabled = false;
+  btn.textContent = 'Save Attendance';
+}
+
+// ── NAV ──────────────────────────────────────────
+function showCourses(){
+  state.selectedCourse = null;
+  state.students = [];
+  state.attendance = {};
+  document.getElementById('view-attendance').style.display = 'none';
+  document.getElementById('view-courses').style.display = 'block';
+  showScreen('screen-app');
+  loadCourses();
+}
+
+// ── INIT — handle redirect after login ───────────
+(async()=>{
+  try {
+    await msalApp.initialize();
+    const result = await msalApp.handleRedirectPromise();
+    if(result){
+      state.user = result.account;
+      enterApp();
+    } else {
+      const accounts = msalApp.getAllAccounts();
+      if(accounts.length){
+        state.user = accounts[0];
+        msalApp.setActiveAccount(accounts[0]);
+        enterApp();
+      }
+    }
+  } catch(e){ console.error('MSAL init error', e); }
+})();
+</script>
+</body>
+</html>
