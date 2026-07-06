@@ -663,7 +663,7 @@ async function selectCourse(courseId){
   showLoading(true);
   try {
     const data = await graphGet(
-      `/sites/${CONFIG.siteHostname},${CONFIG.siteId}/lists/${CONFIG.studentsListId}/items?expand=fields`
+      `/sites/${CONFIG.siteHostname},${CONFIG.siteId}/lists/${CONFIG.studentsListId}/items?expand=fields($select=Title,LastName,Email,CourseType,CompletionStatus,CourseLookupId,id)`
     );
     // Filter by course on client side
     const courseTitle = course.fields.Title;
@@ -672,12 +672,18 @@ async function selectCourse(courseId){
     console.log('All students sample:', JSON.stringify((data.value||[]).slice(0,2).map(s=>({CourseLookupId:s.fields.CourseLookupId, Title:s.fields.Title, id:s.fields.id}))));
     state.students = (data.value || []).filter(s => {
       const f = s.fields;
+      // Try all possible field name variations SharePoint Graph API uses
       if(f.CourseLookupId && courseNumId && String(f.CourseLookupId) === courseNumId) return true;
+      if(f['Course@odata.navigationLink']) return true; // skip - not useful
+      if(f.CourseId && courseNumId && String(f.CourseId) === courseNumId) return true;
       if(typeof f.Course === 'string' && f.Course === courseTitle) return true;
       if(typeof f.Course === 'object' && f.Course) {
         if(f.Course.LookupValue === courseTitle) return true;
         if(f.Course.Value === courseTitle) return true;
+        if(String(f.Course.Id) === courseNumId) return true;
       }
+      // Match by course title in any field
+      if(f.CourseType && f.Title && courseTitle) return false;
       return false;
     });
     // Default everyone to Present
