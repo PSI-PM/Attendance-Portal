@@ -330,7 +330,7 @@ const CONFIG = {
   coursesListId:    '1d435e7e-f510-4a96-b20f-2ba9b1b3babe',
   studentsListId:   '51348acc-f711-48d7-9803-45bb1518b118',
   attendanceListId: 'd464aa77-7218-49b3-8131-aede92fd8d29',
-  githubPAT: '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',
+  githubPAT: 'YOUR_GITHUB_PAT_HERE',
 };
 
 const SCOPES = ['Sites.ReadWrite.All','User.Read'];
@@ -668,6 +668,8 @@ async function selectCourse(courseId){
     // Filter by course on client side
     const courseTitle = course.fields.Title;
     const courseNumId = String(course.fields.id || course.id || '');
+    console.log('Course ID looking for:', courseNumId, 'Course title:', course.fields.Title);
+    console.log('All students sample:', JSON.stringify((data.value||[]).slice(0,2).map(s=>({CourseLookupId:s.fields.CourseLookupId, Title:s.fields.Title, id:s.fields.id}))));
     state.students = (data.value || []).filter(s => {
       const f = s.fields;
       if(f.CourseLookupId && courseNumId && String(f.CourseLookupId) === courseNumId) return true;
