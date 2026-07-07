@@ -330,7 +330,7 @@ const CONFIG = {
   coursesListId:    '1d435e7e-f510-4a96-b20f-2ba9b1b3babe',
   studentsListId:   '51348acc-f711-48d7-9803-45bb1518b118',
   attendanceListId: 'd464aa77-7218-49b3-8131-aede92fd8d29',
-  githubPAT: 'YOUR_GITHUB_PAT_HERE',
+  githubPAT: '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',
 };
 
 const SCOPES = ['Sites.ReadWrite.All','User.Read'];
@@ -421,6 +421,22 @@ async function graphGet(path){
   return res.json();
 }
 
+// Follows @odata.nextLink so we get ALL items, not just the first 200.
+// Graph pages SharePoint list items in batches; graphGet only returns page 1.
+async function graphGetAll(path){
+  const token = await getToken();
+  let items = [];
+  let url = `https://graph.microsoft.com/v1.0${path}`;
+  while(url){
+    const res = await fetch(url, { headers:{ Authorization:`Bearer ${token}` }});
+    if(!res.ok) throw new Error(await res.text());
+    const data = await res.json();
+    items = items.concat(data.value || []);
+    url = data['@odata.nextLink'] || null;  // absolute URL — fetch as-is
+  }
+  return { value: items };
+}
+
 async function graphPost(path, body){
   const token = await getToken();
   const res = await fetch(`https://graph.microsoft.com/v1.0${path}`,{
@@ -437,7 +453,7 @@ async function loadCourses(){
   showLoading(true);
   try {
     const instructorName = state.user.name || state.user.username;
-    const data = await graphGet(
+    const data = await graphGetAll(
       `/sites/${CONFIG.siteHostname},${CONFIG.siteId}/lists/${CONFIG.coursesListId}/items?expand=fields`
     );
     state.courses = data.value || [];
@@ -445,7 +461,7 @@ async function loadCourses(){
   } catch(e) {
     // If filter fails, load all courses as fallback
     try {
-      const data = await graphGet(
+      const data = await graphGetAll(
         `/sites/${CONFIG.siteHostname},${CONFIG.siteId}/lists/${CONFIG.coursesListId}/items?expand=fields`
       );
       state.courses = data.value || [];
@@ -544,7 +560,7 @@ async function generateReport(courseId, silent=false){
     const courseNumId = course.fields.id;
 
     // Get all attendance records for this course
-    const data = await graphGet(
+    const data = await graphGetAll(
       `/sites/${CONFIG.siteHostname},${CONFIG.siteId}/lists/${CONFIG.attendanceListId}/items?expand=fields`
     );
 
@@ -662,28 +678,20 @@ async function selectCourse(courseId){
   state.attendance = {};
   showLoading(true);
   try {
-    const data = await graphGet(
-      `/sites/${CONFIG.siteHostname},${CONFIG.siteId}/lists/${CONFIG.studentsListId}/items?expand=fields($select=Title,LastName,Email,CourseType,CompletionStatus,CourseLookupId,id)`
+    const data = await graphGetAll(
+      `/sites/${CONFIG.siteHostname},${CONFIG.siteId}/lists/${CONFIG.studentsListId}/items?expand=fields`
     );
     // Filter by course on client side
     const courseTitle = course.fields.Title;
     const courseNumId = String(course.fields.id || course.id || '');
-    console.log('Course ID looking for:', courseNumId, 'Course title:', course.fields.Title);
-    console.log('All students sample:', JSON.stringify((data.value||[]).slice(0,2).map(s=>({CourseLookupId:s.fields.CourseLookupId, Title:s.fields.Title, id:s.fields.id}))));
     state.students = (data.value || []).filter(s => {
       const f = s.fields;
-      // Try all possible field name variations SharePoint Graph API uses
       if(f.CourseLookupId && courseNumId && String(f.CourseLookupId) === courseNumId) return true;
-      if(f['Course@odata.navigationLink']) return true; // skip - not useful
-      if(f.CourseId && courseNumId && String(f.CourseId) === courseNumId) return true;
       if(typeof f.Course === 'string' && f.Course === courseTitle) return true;
       if(typeof f.Course === 'object' && f.Course) {
         if(f.Course.LookupValue === courseTitle) return true;
         if(f.Course.Value === courseTitle) return true;
-        if(String(f.Course.Id) === courseNumId) return true;
       }
-      // Match by course title in any field
-      if(f.CourseType && f.Title && courseTitle) return false;
       return false;
     });
     // Default everyone to Present
