@@ -160,6 +160,20 @@ input,textarea,select{font-family:inherit;}
 .attendance-table tr:hover td{background:rgba(0,80,200,0.06);}
 .student-name{font-size:14px;color:var(--gray-900);font-weight:500;}
 .student-num{font-size:11px;color:var(--gray-500);margin-top:1px;}
+.student-sub{display:flex;align-items:center;gap:12px;margin-top:2px;}
+.withdraw-btn{font-size:10.5px;color:var(--gray-500);background:none;border:none;padding:0;text-decoration:underline;text-underline-offset:2px;opacity:0.65;transition:color .15s,opacity .15s;}
+.withdraw-btn:hover{color:var(--red);opacity:1;}
+
+/* CONFIRMATION MODAL */
+.modal-overlay{position:fixed;inset:0;background:rgba(5,13,26,0.8);display:none;align-items:center;justify-content:center;z-index:700;backdrop-filter:blur(4px);padding:20px;}
+.modal-overlay.visible{display:flex;}
+.modal-box{background:var(--surface);border:0.5px solid var(--card-border);border-radius:var(--radius-lg);padding:28px;max-width:420px;width:100%;box-shadow:0 24px 64px rgba(0,0,0,0.5);}
+.modal-title{font-family:"Playfair Display",serif;font-size:20px;color:var(--gray-900);margin-bottom:12px;}
+.modal-body{font-size:13.5px;color:var(--gray-700);line-height:1.6;margin-bottom:22px;}
+.modal-body b{color:var(--gray-900);}
+.modal-actions{display:flex;gap:12px;justify-content:flex-end;flex-wrap:wrap;}
+.btn-danger{padding:11px 24px;border-radius:8px;border:none;background:linear-gradient(90deg,#cc3030,#ff6060);color:white;font-size:14px;font-weight:600;box-shadow:0 0 18px rgba(255,96,96,0.3);transition:opacity .15s;}
+.btn-danger:hover{opacity:0.9;}
 
 .cb-wrap{display:flex;align-items:center;justify-content:center;}
 .cb-custom{width:24px;height:24px;border-radius:6px;border:1.5px solid rgba(0,140,255,0.3);background:rgba(0,40,120,0.1);cursor:pointer;position:relative;transition:all 0.15s;flex-shrink:0;}
@@ -280,6 +294,16 @@ input,textarea,select{font-family:inherit;}
 
 <div class="loading-overlay" id="loading"><div class="spinner"></div></div>
 <div class="toast" id="toast"></div>
+<div class="modal-overlay" id="confirm-modal">
+  <div class="modal-box">
+    <div class="modal-title" id="confirm-title"></div>
+    <div class="modal-body" id="confirm-body"></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeConfirm()">Cancel</button>
+      <button class="btn-danger" id="confirm-ok" onclick="runConfirm()">Confirm</button>
+    </div>
+  </div>
+</div>
 
 <!-- LOGIN -->
 <div class="screen active" id="screen-login">
@@ -402,6 +426,10 @@ const CONFIG = {
   coursesListId:    '1d435e7e-f510-4a96-b20f-2ba9b1b3babe',
   studentsListId:   '51348acc-f711-48d7-9803-45bb1518b118',
   attendanceListId: 'd464aa77-7218-49b3-8131-aede92fd8d29',
+  // Students-list enrollment Status column (Enrolled / Completed / Withdrawn).
+  // Students at withdrawnValue are hidden from the portal.
+  statusField:    'Status',
+  withdrawnValue: 'Withdrawn',
   // Supabase Edge Function that proxies the transcript repository_dispatch.
   // The GitHub PAT lives server-side as a Supabase secret — never in this file.
   transcriptDispatchUrl: 'https://hgbwkcbnmxvuhjcccolr.supabase.co/functions/v1/dispatch-transcripts',
@@ -428,6 +456,8 @@ let state = {
   students: [],
   attendance: {},
   attendanceRecords: [],
+  withdrawnIds: new Set(),
+  withdrawnNames: new Set(),
 };
 
 // ── UTILS ───────────────────────────────────────
@@ -498,12 +528,14 @@ async function loadAttendanceRecords(course){
 async function prepareCourse(course){
   state.selectedCourse = course;
   state.attendance = {};
+  state.withdrawnIds = new Set();
+  state.withdrawnNames = new Set();
   const data = await graphGetAll(
     `/sites/${CONFIG.siteHostname},${CONFIG.siteId}/lists/${CONFIG.studentsListId}/items?expand=fields`
   );
   const courseTitle = course.fields.Title;
   const courseNumId = String(course.fields.id || course.id || '');
-  state.students = (data.value || []).filter(s => {
+  const enrolled = (data.value || []).filter(s => {
     const f = s.fields;
     if(f.CourseLookupId && courseNumId && String(f.CourseLookupId) === courseNumId) return true;
     if(typeof f.Course === 'string' && f.Course === courseTitle) return true;
@@ -513,7 +545,84 @@ async function prepareCourse(course){
     }
     return false;
   });
+  // Split off withdrawn students — hidden from the grid AND from history
+  const active = [];
+  enrolled.forEach(s => {
+    if(isWithdrawn(s.fields)){
+      state.withdrawnIds.add(String(s.fields.id || s.id));
+      if(s.fields.Title) state.withdrawnNames.add(s.fields.Title);
+    } else {
+      active.push(s);
+    }
+  });
+  state.students = active;
   await loadAttendanceRecords(course);
+}
+
+// A student's enrollment Status is Withdrawn (SharePoint choice column)
+function isWithdrawn(f){
+  const v = f[CONFIG.statusField];
+  const val = (typeof v === 'object' && v) ? v.Value : v;
+  return val === CONFIG.withdrawnValue;
+}
+// A saved attendance row belongs to a withdrawn student (match by id, fall back to name)
+function isWithdrawnRecord(rf){
+  if(rf.StudentLookupId && state.withdrawnIds.has(String(rf.StudentLookupId))) return true;
+  if(rf.Title && state.withdrawnNames.has(rf.Title)) return true;
+  return false;
+}
+
+// ── CONFIRMATION MODAL (reusable) ────────────────
+let _confirmAction = null;
+function openConfirm(title, bodyHtml, okLabel, onConfirm){
+  document.getElementById('confirm-title').textContent = title;
+  document.getElementById('confirm-body').innerHTML = bodyHtml;
+  document.getElementById('confirm-ok').textContent = okLabel;
+  _confirmAction = onConfirm;
+  document.getElementById('confirm-modal').classList.add('visible');
+}
+function closeConfirm(){
+  document.getElementById('confirm-modal').classList.remove('visible');
+  _confirmAction = null;
+}
+function runConfirm(){
+  const fn = _confirmAction;
+  closeConfirm();
+  if(fn) fn();
+}
+
+// ── WITHDRAW A STUDENT ───────────────────────────
+function confirmWithdraw(studentId){
+  const s = state.students.find(x => x.id === studentId);
+  if(!s) return;
+  const name = s.fields.Title || 'this student';
+  openConfirm(
+    'Withdraw student?',
+    `<b>${name}</b>'s status will be set to <b>Withdrawn</b>, removing them from this course everywhere in the portal — attendance marking and both past-attendance views. Their saved attendance stays in the records, unchanged.<br><br>To bring them back, change their status in SharePoint.`,
+    'Withdraw',
+    () => withdrawStudent(studentId)
+  );
+}
+async function withdrawStudent(studentId){
+  const s = state.students.find(x => x.id === studentId);
+  if(!s) return;
+  const name = s.fields.Title || '';
+  showLoading(true);
+  try {
+    const path = `/sites/${CONFIG.siteHostname},${CONFIG.siteId}/lists/${CONFIG.studentsListId}/items/${s.id}/fields`;
+    await graphPatch(path, { [CONFIG.statusField]: CONFIG.withdrawnValue });
+    // Hide immediately, in this session, without a reload
+    state.withdrawnIds.add(String(s.fields.id || s.id));
+    if(name) state.withdrawnNames.add(name);
+    state.students = state.students.filter(x => x.id !== studentId);
+    delete state.attendance[studentId];
+    renderAttendance(state.selectedCourse, state.students);
+    applyRecordsForDate(document.getElementById('att-date').value);
+    showToast(`${name || 'Student'} withdrawn and hidden from the portal.`, 'success');
+  } catch(e){
+    showToast('Withdraw failed: ' + e.message, 'error');
+  }
+  showLoading(false);
 }
 
 // Populate the marking grid from saved records for a date; default unmarked to Present
@@ -618,8 +727,10 @@ function renderHistory(){
 function renderHistoryMatrix(){
   const container = document.getElementById('history-matrix');
 
+  const visible = state.attendanceRecords.filter(r => !isWithdrawnRecord(r.fields));
+
   const dateSet = new Set();
-  state.attendanceRecords.forEach(r => {
+  visible.forEach(r => {
     const d = recordDateISO(r.fields);
     if(d) dateSet.add(d);
   });
@@ -630,15 +741,15 @@ function renderHistoryMatrix(){
     return;
   }
 
-  // Row set = everyone enrolled plus anyone appearing in the records
+  // Row set = active enrolled students plus non-withdrawn names in the records
   const names = new Set();
   state.students.forEach(s => { if(s.fields.Title) names.add(s.fields.Title); });
-  state.attendanceRecords.forEach(r => { if(r.fields.Title) names.add(r.fields.Title); });
+  visible.forEach(r => { if(r.fields.Title) names.add(r.fields.Title); });
   const students = [...names].sort((a,b) => a.localeCompare(b));
 
   // cell[name][date] = { present, flags }
   const cell = {};
-  state.attendanceRecords.forEach(r => {
+  visible.forEach(r => {
     const rf = r.fields;
     const name = rf.Title || '';
     const d = recordDateISO(rf);
@@ -684,6 +795,7 @@ function renderHistoryMatrix(){
 function renderHistoryDays(){
   const byDate = {};
   state.attendanceRecords.forEach(r => {
+    if(isWithdrawnRecord(r.fields)) return;
     const d = recordDateISO(r.fields);
     if(!d) return;
     (byDate[d] = byDate[d] || []).push(r);
@@ -773,7 +885,7 @@ async function getToken(){
 }
 
 function handleLogout(){
-  state = { user:null, accessToken:null, courses:[], selectedCourse:null, students:[], attendance:{}, attendanceRecords:[] };
+  state = { user:null, accessToken:null, courses:[], selectedCourse:null, students:[], attendance:{}, attendanceRecords:[], withdrawnIds:new Set(), withdrawnNames:new Set() };
   msalApp.logoutRedirect({ postLogoutRedirectUri: window.location.href });
 }
 
@@ -1078,7 +1190,7 @@ function renderAttendance(course, students){
     <tr>
       <td class="col-name">
         <div class="student-name">${name}</div>
-        <div class="student-num">${i+1}</div>
+        <div class="student-sub"><span class="student-num">${i+1}</span><button class="withdraw-btn" onclick="confirmWithdraw('${s.id}')">Withdraw</button></div>
       </td>
       <td><div class="cb-wrap"><div class="cb-custom checked-present" id="cb-${s.id}-present" onclick="toggleCb('${s.id}','present')"></div></div></td>
       <td><div class="cb-wrap"><div class="cb-custom" id="cb-${s.id}-absent" onclick="toggleCb('${s.id}','absent')"></div></div></td>
@@ -1255,6 +1367,8 @@ function showCourses(){
   state.students = [];
   state.attendance = {};
   state.attendanceRecords = [];
+  state.withdrawnIds = new Set();
+  state.withdrawnNames = new Set();
   document.getElementById('view-attendance').style.display = 'none';
   document.getElementById('view-history').style.display = 'none';
   document.getElementById('view-courses').style.display = 'block';
