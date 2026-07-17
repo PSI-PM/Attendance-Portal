@@ -242,6 +242,30 @@ input,textarea,select{font-family:inherit;}
 .badge-excused{background:rgba(150,80,255,0.15);color:#a060ff;}
 .session-edit{margin-top:14px;text-align:right;}
 
+/* HISTORY — view toggle + full-course matrix */
+.hist-toggle{display:inline-flex;gap:6px;background:rgba(0,40,120,0.15);border:0.5px solid var(--card-border);border-radius:10px;padding:4px;margin-bottom:18px;}
+.hist-toggle button{border:none;background:none;color:var(--gray-500);font-size:12.5px;font-weight:600;padding:7px 16px;border-radius:7px;transition:all .15s;}
+.hist-toggle button.active{background:rgba(0,140,255,0.18);color:var(--gray-900);}
+.matrix-wrap{overflow-x:auto;border-radius:var(--radius);border:0.5px solid var(--card-border);background:var(--card-bg);}
+.matrix{border-collapse:collapse;width:auto;min-width:100%;}
+.matrix th,.matrix td{padding:8px 6px;text-align:center;border-bottom:0.5px solid rgba(0,140,255,0.08);white-space:nowrap;font-size:12px;}
+.matrix tr:last-child td{border-bottom:none;}
+.matrix thead th{background:rgba(0,40,120,0.25);color:var(--gray-500);font-size:10.5px;letter-spacing:0.04em;text-transform:uppercase;font-weight:600;position:sticky;top:0;}
+.matrix th.mx-name,.matrix td.mx-name{position:sticky;left:0;text-align:left;background:rgba(6,16,32,0.98);min-width:150px;color:var(--gray-900);font-weight:500;z-index:2;box-shadow:1px 0 0 rgba(0,140,255,0.15);}
+.matrix thead th.mx-name{z-index:3;}
+.matrix td.mx-total{font-weight:700;color:var(--gray-700);}
+.mx{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:6px;font-weight:700;font-size:12px;}
+.mx-p{background:rgba(0,200,168,0.2);color:var(--green);}
+.mx-a{background:rgba(255,96,96,0.18);color:var(--red);}
+.mx-empty{color:var(--gray-500);opacity:0.4;font-weight:400;}
+.mx-flags{display:block;font-size:9px;font-weight:700;letter-spacing:0.02em;margin-top:2px;line-height:1;}
+.fl-late{color:var(--yellow);}
+.fl-le{color:var(--blue);}
+.fl-exc{color:#a060ff;}
+.mx-legend{display:flex;flex-wrap:wrap;gap:14px;margin-top:12px;font-size:11px;color:var(--gray-500);}
+.mx-legend span{display:inline-flex;align-items:center;gap:5px;}
+.mx-note{margin-top:10px;font-size:11px;color:var(--gray-500);font-style:italic;}
+
 @media(max-width:640px){
   .app-main{padding:16px;}
   .login-box{padding:28px 20px;}
@@ -347,7 +371,12 @@ input,textarea,select{font-family:inherit;}
       <div class="page-eyebrow">Attendance Portal</div>
       <h1 class="page-title" id="hist-title">Attendance History</h1>
       <p class="page-sub" id="hist-sub"></p>
-      <div class="history-list" id="history-list"></div>
+      <div class="hist-toggle">
+        <button id="tab-course" class="active" onclick="setHistoryView('course')">Full course</button>
+        <button id="tab-days" onclick="setHistoryView('days')">By day</button>
+      </div>
+      <div id="history-matrix"></div>
+      <div class="history-list" id="history-list" style="display:none;"></div>
     </div>
   </main>
 </div>
@@ -561,6 +590,16 @@ function statusBadges(statusVal, flags){
   if(flags.excused)   html += '<span class="badge badge-excused">Excused</span>';
   return html;
 }
+let historyView = 'course';   // 'course' = full matrix, 'days' = per-day cards
+
+function setHistoryView(mode){
+  historyView = mode;
+  document.getElementById('history-matrix').style.display = mode === 'course' ? 'block' : 'none';
+  document.getElementById('history-list').style.display   = mode === 'days'   ? 'flex'  : 'none';
+  document.getElementById('tab-course').classList.toggle('active', mode === 'course');
+  document.getElementById('tab-days').classList.toggle('active', mode === 'days');
+}
+
 function renderHistory(){
   const course = state.selectedCourse;
   const f = course.fields;
@@ -570,6 +609,79 @@ function renderHistory(){
   document.getElementById('hist-sub').textContent =
     `${courseType}${partner ? ' — ' + partner : ''} · Past sessions`;
 
+  renderHistoryMatrix();
+  renderHistoryDays();
+  setHistoryView(historyView);
+}
+
+// Full-course grid: students (rows) × class dates (columns)
+function renderHistoryMatrix(){
+  const container = document.getElementById('history-matrix');
+
+  const dateSet = new Set();
+  state.attendanceRecords.forEach(r => {
+    const d = recordDateISO(r.fields);
+    if(d) dateSet.add(d);
+  });
+  const dates = [...dateSet].sort();   // chronological, left → right
+
+  if(!dates.length){
+    container.innerHTML = `<div class="empty-state"><div class="empty-icon">🗓️</div><div class="empty-title">No sessions recorded yet</div><div class="empty-sub">Attendance you save will appear here.</div></div>`;
+    return;
+  }
+
+  // Row set = everyone enrolled plus anyone appearing in the records
+  const names = new Set();
+  state.students.forEach(s => { if(s.fields.Title) names.add(s.fields.Title); });
+  state.attendanceRecords.forEach(r => { if(r.fields.Title) names.add(r.fields.Title); });
+  const students = [...names].sort((a,b) => a.localeCompare(b));
+
+  // cell[name][date] = { present, flags }
+  const cell = {};
+  state.attendanceRecords.forEach(r => {
+    const rf = r.fields;
+    const name = rf.Title || '';
+    const d = recordDateISO(rf);
+    if(!name || !d) return;
+    const statusVal = typeof rf.Status === 'object' ? (rf.Status && rf.Status.Value) : (rf.Status || 'Present');
+    const { flags } = parseNotes(rf.Notes);
+    (cell[name] = cell[name] || {})[d] = { present: statusVal === 'Present', flags };
+  });
+
+  const colDate = d => new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month:'numeric', day:'numeric' });
+  const head = `<tr><th class="mx-name">Student</th>${dates.map(d => `<th>${colDate(d)}</th>`).join('')}<th>Present</th></tr>`;
+
+  const body = students.map(name => {
+    let present = 0, total = 0;
+    const cells = dates.map(d => {
+      const c = cell[name] && cell[name][d];
+      if(!c) return `<td><span class="mx mx-empty">·</span></td>`;
+      total++;
+      if(c.present) present++;
+      const fl = [];
+      if(c.flags.late)      fl.push('<span class="fl-late">L</span>');
+      if(c.flags.leftEarly) fl.push('<span class="fl-le">LE</span>');
+      if(c.flags.excused)   fl.push('<span class="fl-exc">E</span>');
+      const flHtml = fl.length ? `<span class="mx-flags">${fl.join(' ')}</span>` : '';
+      return `<td><span class="mx ${c.present ? 'mx-p' : 'mx-a'}">${c.present ? 'P' : 'A'}</span>${flHtml}</td>`;
+    }).join('');
+    return `<tr><td class="mx-name">${name}</td>${cells}<td class="mx-total">${present}/${total}</td></tr>`;
+  }).join('');
+
+  container.innerHTML =
+    `<div class="matrix-wrap"><table class="matrix"><thead>${head}</thead><tbody>${body}</tbody></table></div>
+     <div class="mx-legend">
+       <span><span class="mx mx-p" style="width:18px;height:18px;font-size:10px;">P</span> Present</span>
+       <span><span class="mx mx-a" style="width:18px;height:18px;font-size:10px;">A</span> Absent</span>
+       <span><b class="fl-late">L</b> Late</span>
+       <span><b class="fl-le">LE</b> Left early</span>
+       <span><b class="fl-exc">E</b> Excused</span>
+     </div>
+     <div class="mx-note">Read-only overview — to change a day, switch to <b>By day</b> and tap ✎ Edit this day.</div>`;
+}
+
+// Per-day cards (existing view)
+function renderHistoryDays(){
   const byDate = {};
   state.attendanceRecords.forEach(r => {
     const d = recordDateISO(r.fields);
