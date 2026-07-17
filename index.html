@@ -427,8 +427,10 @@ const CONFIG = {
   studentsListId:   '51348acc-f711-48d7-9803-45bb1518b118',
   attendanceListId: 'd464aa77-7218-49b3-8131-aede92fd8d29',
   // Students-list enrollment Status column (Enrolled / Completed / Withdrawn).
-  // Students at withdrawnValue are hidden from the portal.
-  statusField:    'Status',
+  // Students-list enrollment status. SharePoint renamed the internal field, so we
+  // resolve it at runtime by display name rather than hard-coding the internal name.
+  statusDisplayName: 'Completion Status',
+  statusField:    null,          // resolved internal name, filled in at load time
   withdrawnValue: 'Withdrawn',
   // Supabase Edge Function that proxies the transcript repository_dispatch.
   // The GitHub PAT lives server-side as a Supabase secret — never in this file.
@@ -545,6 +547,8 @@ async function prepareCourse(course){
     }
     return false;
   });
+  // Resolve the renamed status column once (uses a sample row for the fallback sniff)
+  await resolveStatusField(enrolled[0] && enrolled[0].fields);
   // Split off withdrawn students — hidden from the grid AND from history
   const active = [];
   enrolled.forEach(s => {
@@ -559,8 +563,39 @@ async function prepareCourse(course){
   await loadAttendanceRecords(course);
 }
 
+// Resolve the Students-list status column's real internal name from its display
+// name (SharePoint renames columns with spaces, e.g. to Completion_x0020_Status
+// or a field_x). Cached on CONFIG.statusField after the first successful lookup.
+async function resolveStatusField(sampleFields){
+  if(CONFIG.statusField) return CONFIG.statusField;
+  // 1) Ask the list for its column definitions and match on displayName
+  try {
+    const cols = await graphGet(
+      `/sites/${CONFIG.siteHostname},${CONFIG.siteId}/lists/${CONFIG.studentsListId}/columns`
+    );
+    const match = (cols.value || []).find(c =>
+      c.displayName === CONFIG.statusDisplayName || c.name === CONFIG.statusDisplayName);
+    if(match && match.name){
+      CONFIG.statusField = match.name;
+      return CONFIG.statusField;
+    }
+  } catch(e){
+    console.warn('Column metadata lookup failed:', e.message);
+  }
+  // 2) Fallback: sniff an item's fields for a key holding a valid status value
+  if(sampleFields){
+    const valid = ['Completed','Enrolled','In Progress','Withdrawn'];
+    for(const [k, v] of Object.entries(sampleFields)){
+      const val = (typeof v === 'object' && v) ? v.Value : v;
+      if(valid.includes(val)){ CONFIG.statusField = k; return k; }
+    }
+  }
+  return null;
+}
+
 // A student's enrollment Status is Withdrawn (SharePoint choice column)
 function isWithdrawn(f){
+  if(!CONFIG.statusField) return false;
   const v = f[CONFIG.statusField];
   const val = (typeof v === 'object' && v) ? v.Value : v;
   return val === CONFIG.withdrawnValue;
@@ -609,8 +644,14 @@ async function withdrawStudent(studentId){
   const name = s.fields.Title || '';
   showLoading(true);
   try {
+    const field = CONFIG.statusField || await resolveStatusField(s.fields);
+    if(!field){
+      showLoading(false);
+      showToast(`Couldn't find the "${CONFIG.statusDisplayName}" column on the Students list.`, 'error');
+      return;
+    }
     const path = `/sites/${CONFIG.siteHostname},${CONFIG.siteId}/lists/${CONFIG.studentsListId}/items/${s.id}/fields`;
-    await graphPatch(path, { [CONFIG.statusField]: CONFIG.withdrawnValue });
+    await graphPatch(path, { [field]: CONFIG.withdrawnValue });
     // Hide immediately, in this session, without a reload
     state.withdrawnIds.add(String(s.fields.id || s.id));
     if(name) state.withdrawnNames.add(name);
