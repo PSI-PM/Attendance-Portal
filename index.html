@@ -1259,6 +1259,37 @@ function toggleCb(studentId, field){
 }
 
 // ── SUBMIT ───────────────────────────────────────
+// ── ENROLLMENT STATUS PROMOTION ──────────────────
+// Once a student is actually marked present, "Enrolled" is stale — they've
+// started the course. Bump them to "In Progress". Only ever promotes FROM
+// Enrolled, so Completed and Withdrawn are never overwritten. Failures here
+// are logged but never block the attendance save.
+async function promoteStartedStudents(){
+  const field = CONFIG.statusField || await resolveStatusField(
+    state.students[0] && state.students[0].fields);
+  if(!field) return 0;
+
+  let promoted = 0;
+  for(const student of state.students){
+    const a = state.attendance[student.id];
+    if(!a || !a.present) continue;                       // absent → still just Enrolled
+    const raw = student.fields[field];
+    const cur = (typeof raw === 'object' && raw) ? raw.Value : raw;
+    if(cur !== 'Enrolled') continue;                     // already In Progress / Completed / Withdrawn
+    try {
+      await graphPatch(
+        `/sites/${CONFIG.siteHostname},${CONFIG.siteId}/lists/${CONFIG.studentsListId}/items/${student.id}/fields`,
+        { [field]: 'In Progress' }
+      );
+      student.fields[field] = 'In Progress';             // keep local copy in sync
+      promoted++;
+    } catch(e){
+      console.warn(`Status promotion failed for ${student.fields.Title}:`, e.message);
+    }
+  }
+  return promoted;
+}
+
 async function submitAttendance(){
   const btn = document.getElementById('submit-btn');
   const notes = document.getElementById('att-notes').value.trim();
@@ -1305,6 +1336,11 @@ async function submitAttendance(){
     // Refresh cached rows so history + date prefill reflect this save
     try { await loadAttendanceRecords(state.selectedCourse); } catch(e){ console.warn('Record refresh failed:', e.message); }
 
+    // Students marked present are underway — move them off "Enrolled"
+    let promotedCount = 0;
+    try { promotedCount = await promoteStartedStudents(); }
+    catch(e){ console.warn('Status promotion failed:', e.message); }
+
     // Fire end-of-course automation only when the MARKED date is the last class day
     const courseEndDate = state.selectedCourse.fields.EndDate;
     const isLastDay = courseEndDate && classDate === courseEndDate.split('T')[0];
@@ -1326,8 +1362,11 @@ async function submitAttendance(){
 
     showLoading(false);
     const reportMsg = isLastDay ? ' Attendance report has been saved to Training Records.' : '';
+    const promoMsg = promotedCount
+      ? ` ${promotedCount} student${promotedCount!==1?'s':''} moved to In Progress.`
+      : '';
     document.getElementById('success-msg').textContent =
-      `Attendance for ${state.students.length} student${state.students.length!==1?'s':''} recorded for ${courseName} on ${formatDateShort(new Date(classDate + 'T12:00:00'))}.${reportMsg}`;
+      `Attendance for ${state.students.length} student${state.students.length!==1?'s':''} recorded for ${courseName} on ${formatDateShort(new Date(classDate + 'T12:00:00'))}.${promoMsg}${reportMsg}`;
     document.getElementById('view-attendance').style.display = 'none';
     document.getElementById('view-courses').style.display = 'block';
     showScreen('screen-success');
